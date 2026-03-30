@@ -15,12 +15,12 @@ func init() {
 		Short: "Poll until a GPU type is available, then launch",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			statusf("Watching for %s availability (every %ds)...\n", gpu, interval)
-			tick := time.NewTicker(time.Duration(interval) * time.Second)
-			defer tick.Stop()
-			for ; ; <-tick.C {
+			pollInterval := time.Duration(interval) * time.Second
+			for {
 				types, err := client.ListInstanceTypes()
 				if err != nil {
 					statusf("  [%s] error: %v\n", time.Now().Format("15:04:05"), err)
+					time.Sleep(pollInterval)
 					continue
 				}
 				entry, ok := types[gpu]
@@ -29,6 +29,7 @@ func init() {
 				}
 				if len(entry.Regions) == 0 {
 					statusf("  [%s] no availability\n", time.Now().Format("15:04:05"))
+					time.Sleep(pollInterval)
 					continue
 				}
 				target := entry.Regions[0].Name
@@ -43,6 +44,7 @@ func init() {
 					}
 					if !found {
 						statusf("  [%s] available but not in %s\n", time.Now().Format("15:04:05"), region)
+						time.Sleep(pollInterval)
 						continue
 					}
 				}

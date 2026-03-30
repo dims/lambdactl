@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,9 +15,34 @@ import (
 
 const baseURL = "https://cloud.lambdalabs.com/api/v1"
 
+const (
+	throttleBaseDelay  = 5 * time.Second
+	throttleMaxDelay   = 1 * time.Minute
+	throttleMaxRetries = 3
+)
+
+var (
+	retrySleep  = time.Sleep
+	retryJitter = func(max time.Duration) time.Duration {
+		if max <= 0 {
+			return 0
+		}
+		return time.Duration(rand.Int64N(int64(max) + 1))
+	}
+)
+
+type RetryEvent struct {
+	Method  string
+	Path    string
+	Attempt int
+	Delay   time.Duration
+	Err     error
+}
+
 type Client struct {
-	key    string
-	client *http.Client
+	key       string
+	client    *http.Client
+	retryHook func(RetryEvent)
 }
 
 func NewClient() (*Client, error) {
@@ -49,34 +75,104 @@ func NewClient() (*Client, error) {
 	return &Client{key: key, client: &http.Client{Timeout: 30 * time.Second}}, nil
 }
 
+func (c *Client) SetRetryHook(h func(RetryEvent)) {
+	c.retryHook = h
+}
+
 func (c *Client) do(method, path string, body any) ([]byte, error) {
-	var r io.Reader
+	var payload []byte
 	if body != nil {
-		b, _ := json.Marshal(body)
-		r = bytes.NewReader(b)
-	}
-	req, err := http.NewRequest(method, baseURL+path, r)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.key)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 {
-		var e struct {
-			Error struct{ Message string } `json:"error"`
+		var err error
+		payload, err = json.Marshal(body)
+		if err != nil {
+			return nil, err
 		}
-		if json.Unmarshal(data, &e) == nil && e.Error.Message != "" {
-			return nil, fmt.Errorf("%s", e.Error.Message)
-		}
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, data)
 	}
-	return data, nil
+
+	for attempt := 0; ; attempt++ {
+		var r io.Reader
+		if payload != nil {
+			r = bytes.NewReader(payload)
+		}
+		req, err := http.NewRequest(method, baseURL+path, r)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+c.key)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		data, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+
+		if resp.StatusCode < 400 {
+			return data, nil
+		}
+
+		apiErr := newAPIError(resp, data)
+		if !apiErr.IsThrottle() || attempt >= throttleMaxRetries {
+			return nil, apiErr
+		}
+
+		delay := throttleDelay(apiErr, attempt)
+		if c.retryHook != nil {
+			c.retryHook(RetryEvent{
+				Method:  method,
+				Path:    path,
+				Attempt: attempt + 1,
+				Delay:   delay,
+				Err:     apiErr,
+			})
+		}
+		retrySleep(delay)
+	}
+}
+
+func newAPIError(resp *http.Response, data []byte) *Error {
+	var e struct {
+		Error struct{ Message string } `json:"error"`
+	}
+	_ = json.Unmarshal(data, &e)
+	return &Error{
+		StatusCode: resp.StatusCode,
+		Message:    strings.TrimSpace(e.Error.Message),
+		Body:       strings.TrimSpace(string(data)),
+		RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After")),
+	}
+}
+
+func throttleDelay(err error, attempt int) time.Duration {
+	if delay, ok := RetryAfterDelay(err); ok {
+		if delay > throttleMaxDelay {
+			return throttleMaxDelay
+		}
+		return delay
+	}
+
+	delay := throttleBaseDelay
+	for i := 0; i < attempt; i++ {
+		delay *= 2
+		if delay >= throttleMaxDelay {
+			delay = throttleMaxDelay
+			break
+		}
+	}
+
+	jitterRange := delay / 2
+	if jitterRange > 0 {
+		delay += retryJitter(jitterRange)
+	}
+	if delay > throttleMaxDelay {
+		delay = throttleMaxDelay
+	}
+	return delay
 }
 
 // Types

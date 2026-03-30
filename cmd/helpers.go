@@ -3,10 +3,9 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/spf13/cobra"
 	"io"
 	"os"
-
-	"github.com/spf13/cobra"
 )
 
 func outputJSON(v any) error {

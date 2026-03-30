@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/dims/lambdactl/api"
 	"github.com/spf13/cobra"
@@ -24,6 +25,11 @@ var rootCmd = &cobra.Command{
 		}
 		var err error
 		client, err = api.NewClient()
+		if err == nil {
+			client.SetRetryHook(func(event api.RetryEvent) {
+				statusf("%s %s rate-limited; retrying in %s\n", event.Method, event.Path, event.Delay.Round(time.Second))
+			})
+		}
 		return err
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
