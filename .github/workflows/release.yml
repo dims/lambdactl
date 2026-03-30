@@ -1,0 +1,42 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -ldflags "-s -w -X github.com/dims/lambdactl/cmd.version=${VERSION}" \
+            -o lambdactl${EXT} .
+          tar czf lambdactl-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz lambdactl${EXT}
+      - name: Upload
+        uses: softprops/action-gh-release@v2
+        with:
+          files: lambdactl-*.tar.gz
