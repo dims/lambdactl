@@ -1,6 +1,6 @@
 # lambdactl
 
-CLI for [Lambda Labs](https://lambdalabs.com/) cloud GPU instances.
+CLI for [Lambda AI](https://lambda.ai/) cloud GPU instances.
 
 ## Install
 

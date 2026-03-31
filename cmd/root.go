@@ -17,7 +17,7 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:     "lambdactl",
-	Short:   "CLI for Lambda Labs cloud GPU instances",
+	Short:   "CLI for Lambda AI cloud GPU instances",
 	Version: version,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		if !shouldInitClient(cmd) {
