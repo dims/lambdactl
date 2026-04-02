@@ -22,6 +22,9 @@ func init() {
 If --gpu is specified, watch only that type. If omitted, watch for ANY
 available GPU and launch the cheapest one found.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !dryRun && sshKey == "" {
+				return fmt.Errorf("--ssh is required when not using --dry-run")
+			}
 			if gpu != "" {
 				statusf("Watching for %s availability (every %ds)...\n", gpu, interval)
 			} else {
@@ -82,9 +85,8 @@ available GPU and launch the cheapest one found.`,
 					if !isRetryable(err) {
 						return err
 					}
-					statusf("  launch failed (capacity): %v — continuing to watch...\n", err)
-					time.Sleep(pollInterval)
-					continue
+					statusf("  launch failed (capacity): %v — re-polling...\n", err)
+					continue // re-poll immediately to pick a different type
 				}
 				statusf("Launched instance %s. Waiting for IP...\n", id)
 				inst, err := waitForIP(client, id)
@@ -113,7 +115,6 @@ available GPU and launch the cheapest one found.`,
 	cmd.Flags().IntVar(&timeout, "timeout", 0, "give up waiting for availability after this many seconds; does not cover launch/boot time (0 = no timeout)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report availability but do not launch")
 	cmd.Flags().BoolVar(&waitSSH, "wait-ssh", false, "wait for SSH to become available after launch")
-	cmd.MarkFlagRequired("ssh")
 	rootCmd.AddCommand(cmd)
 }
 
