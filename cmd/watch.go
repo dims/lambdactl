@@ -79,7 +79,10 @@ available GPU and launch the cheapest one found.`,
 				statusf(" Launching...\n")
 				id, err := client.Launch(match, sshKey, name, target)
 				if err != nil {
-					statusf("  launch failed: %v — continuing to watch...\n", err)
+					if !isRetryable(err) {
+						return err
+					}
+					statusf("  launch failed (capacity): %v — continuing to watch...\n", err)
 					time.Sleep(pollInterval)
 					continue
 				}
@@ -107,7 +110,7 @@ available GPU and launch the cheapest one found.`,
 	cmd.Flags().StringVarP(&name, "name", "n", "", "instance name")
 	cmd.Flags().StringVarP(&region, "region", "r", "", "only launch in this region")
 	cmd.Flags().IntVar(&interval, "interval", 10, "poll interval in seconds")
-	cmd.Flags().IntVar(&timeout, "timeout", 0, "give up after this many seconds (0 = no timeout)")
+	cmd.Flags().IntVar(&timeout, "timeout", 0, "give up waiting for availability after this many seconds; does not cover launch/boot time (0 = no timeout)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report availability but do not launch")
 	cmd.Flags().BoolVar(&waitSSH, "wait-ssh", false, "wait for SSH to become available after launch")
 	cmd.MarkFlagRequired("ssh")

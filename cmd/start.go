@@ -32,6 +32,9 @@ func init() {
 					var err error
 					r, err = pickRegion(client, gpu)
 					if err != nil {
+						if !isRetryable(err) {
+							return err
+						}
 						lastErr = err
 						continue
 					}
@@ -39,6 +42,9 @@ func init() {
 
 				id, err := client.Launch(gpu, sshKey, name, r)
 				if err != nil {
+					if !isRetryable(err) {
+						return err
+					}
 					lastErr = err
 					continue
 				}
@@ -77,6 +83,22 @@ func init() {
 	rootCmd.AddCommand(cmd)
 }
 
+// noCapacityError indicates no regions have capacity for the requested GPU.
+type noCapacityError struct{ gpu string }
+
+func (e *noCapacityError) Error() string {
+	return fmt.Sprintf("no regions available for %s", e.gpu)
+}
+
+// isRetryable returns true for errors that indicate GPU capacity shortage
+// (worth retrying) vs permanent failures like bad input or auth errors.
+func isRetryable(err error) bool {
+	if _, ok := err.(*noCapacityError); ok {
+		return true
+	}
+	return api.IsCapacityError(err)
+}
+
 func pickRegion(c *api.Client, gpu string) (string, error) {
 	types, err := c.ListInstanceTypes()
 	if err != nil {
@@ -87,7 +109,7 @@ func pickRegion(c *api.Client, gpu string) (string, error) {
 		return "", fmt.Errorf("unknown GPU type: %s", gpu)
 	}
 	if len(entry.Regions) == 0 {
-		return "", fmt.Errorf("no regions available for %s", gpu)
+		return "", &noCapacityError{gpu: gpu}
 	}
 	return entry.Regions[0].Name, nil
 }

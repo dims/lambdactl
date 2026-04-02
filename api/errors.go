@@ -43,6 +43,18 @@ func IsThrottleError(err error) bool {
 	return errors.As(err, &apiErr) && apiErr.IsThrottle()
 }
 
+func (e *Error) IsCapacity() bool {
+	text := strings.ToLower(e.Message)
+	return strings.Contains(text, "not enough capacity") ||
+		strings.Contains(text, "no capacity") ||
+		strings.Contains(text, "insufficient capacity")
+}
+
+func IsCapacityError(err error) bool {
+	var apiErr *Error
+	return errors.As(err, &apiErr) && apiErr.IsCapacity()
+}
+
 func RetryAfterDelay(err error) (time.Duration, bool) {
 	var apiErr *Error
 	if !errors.As(err, &apiErr) || apiErr.RetryAfter <= 0 {
