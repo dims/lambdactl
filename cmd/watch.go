@@ -79,7 +79,9 @@ available GPU and launch the cheapest one found.`,
 				statusf(" Launching...\n")
 				id, err := client.Launch(match, sshKey, name, target)
 				if err != nil {
-					return err
+					statusf("  launch failed: %v — continuing to watch...\n", err)
+					time.Sleep(pollInterval)
+					continue
 				}
 				statusf("Launched instance %s. Waiting for IP...\n", id)
 				inst, err := waitForIP(client, id)
