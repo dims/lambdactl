@@ -12,7 +12,7 @@ import (
 func init() {
 	var gpu, sshKey, name, region string
 	var interval, timeout int
-	var dryRun bool
+	var dryRun, waitSSH bool
 	cmd := &cobra.Command{
 		Use:          "watch",
 		Short:        "Poll until a GPU type is available, then launch",
@@ -88,6 +88,12 @@ available GPU and launch the cheapest one found.`,
 				if err != nil {
 					return err
 				}
+				if waitSSH {
+					statusf("Waiting for SSH on %s...\n", inst.IP)
+					if err := waitForSSH(inst.IP); err != nil {
+						return err
+					}
+				}
 				if jsonOutput {
 					return outputJSON(inst)
 				}
@@ -103,6 +109,7 @@ available GPU and launch the cheapest one found.`,
 	cmd.Flags().IntVar(&interval, "interval", 10, "poll interval in seconds")
 	cmd.Flags().IntVar(&timeout, "timeout", 0, "give up after this many seconds (0 = no timeout)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report availability but do not launch")
+	cmd.Flags().BoolVar(&waitSSH, "wait-ssh", false, "wait for SSH to become available after launch")
 	cmd.MarkFlagRequired("ssh")
 	rootCmd.AddCommand(cmd)
 }
