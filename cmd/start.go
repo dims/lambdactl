@@ -15,8 +15,9 @@ func init() {
 	var retries, retryDelay int
 	var waitSSH bool
 	cmd := &cobra.Command{
-		Use:   "start",
-		Short: "Launch a GPU instance",
+		Use:          "start",
+		Short:        "Launch a GPU instance",
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var lastErr error
 			for attempt := 0; attempt <= retries; attempt++ {

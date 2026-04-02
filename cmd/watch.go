@@ -14,8 +14,9 @@ func init() {
 	var interval, timeout int
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:   "watch",
-		Short: "Poll until a GPU type is available, then launch",
+		Use:          "watch",
+		Short:        "Poll until a GPU type is available, then launch",
+		SilenceUsage: true,
 		Long: `Poll until a GPU type is available, then launch it.
 
 If --gpu is specified, watch only that type. If omitted, watch for ANY
