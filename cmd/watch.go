@@ -99,6 +99,7 @@ available GPU and launch the cheapest one found.`,
 						return err
 					}
 				}
+				printInstanceSummary(inst)
 				if jsonOutput {
 					return outputJSON(inst)
 				}

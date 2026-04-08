@@ -62,6 +62,7 @@ func init() {
 					}
 				}
 
+				printInstanceSummary(inst)
 				if jsonOutput {
 					return outputJSON(inst)
 				}
