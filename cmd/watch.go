@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/dims/lambdactl/api"
@@ -19,14 +20,27 @@ func init() {
 		SilenceUsage: true,
 		Long: `Poll until a GPU type is available, then launch it.
 
-If --gpu is specified, watch only that type. If omitted, watch for ANY
-available GPU and launch the cheapest one found.`,
+If --gpu is specified, watch only that type. Multiple types can be
+comma-separated (e.g. --gpu gpu_1x_h100_pcie,gpu_1x_a100_sxm4) to
+watch for any of them and launch the cheapest one found. If omitted,
+watch for ANY available GPU and launch the cheapest one found.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !dryRun && sshKey == "" {
 				return fmt.Errorf("--ssh is required when not using --dry-run")
 			}
+			// Parse comma-separated GPU types into a set for multi-type matching.
+			var gpuFilter []string
 			if gpu != "" {
-				statusf("Watching for %s availability (every %ds)...\n", gpu, interval)
+				for _, g := range strings.Split(gpu, ",") {
+					if g = strings.TrimSpace(g); g != "" {
+						gpuFilter = append(gpuFilter, g)
+					}
+				}
+			}
+			if len(gpuFilter) == 1 {
+				statusf("Watching for %s availability (every %ds)...\n", gpuFilter[0], interval)
+			} else if len(gpuFilter) > 1 {
+				statusf("Watching for %s availability (every %ds)...\n", strings.Join(gpuFilter, ", "), interval)
 			} else {
 				statusf("Watching for any GPU availability (every %ds)...\n", interval)
 			}
@@ -55,7 +69,7 @@ available GPU and launch the cheapest one found.`,
 					continue
 				}
 
-				match, target, err := findAvailable(types, gpu, region)
+				match, target, err := findAvailable(types, gpuFilter, region)
 				if err != nil {
 					return err
 				}
@@ -108,7 +122,7 @@ available GPU and launch the cheapest one found.`,
 			}
 		},
 	}
-	cmd.Flags().StringVarP(&gpu, "gpu", "g", "", "GPU instance type (omit to watch for any)")
+	cmd.Flags().StringVarP(&gpu, "gpu", "g", "", "GPU instance type(s), comma-separated (omit to watch for any)")
 	cmd.Flags().StringVarP(&sshKey, "ssh", "s", "", "SSH key name (required)")
 	cmd.Flags().StringVarP(&name, "name", "n", "", "instance name")
 	cmd.Flags().StringVarP(&region, "region", "r", "", "only launch in this region")
@@ -120,22 +134,33 @@ available GPU and launch the cheapest one found.`,
 }
 
 // findAvailable returns the instance type name and region to launch.
-// If gpu is set, only that type is considered. Otherwise the cheapest
-// available type is selected. Returns ("", "", nil) when nothing is available.
-func findAvailable(types map[string]api.InstanceTypeEntry, gpu, region string) (string, string, error) {
-	if gpu != "" {
-		entry, ok := types[gpu]
+// If gpuFilter has exactly one entry, only that type is considered.
+// If gpuFilter has multiple entries, only those types are considered
+// (cheapest first). If gpuFilter is empty, any available type is
+// considered (cheapest first). Returns ("", "", nil) when nothing is available.
+func findAvailable(types map[string]api.InstanceTypeEntry, gpuFilter []string, region string) (string, string, error) {
+	if len(gpuFilter) == 1 {
+		entry, ok := types[gpuFilter[0]]
 		if !ok {
-			return "", "", fmt.Errorf("unknown GPU type: %s", gpu)
+			return "", "", fmt.Errorf("unknown GPU type: %s", gpuFilter[0])
 		}
 		target := matchRegion(entry, region)
 		if target == "" {
 			return "", "", nil
 		}
-		return gpu, target, nil
+		return gpuFilter[0], target, nil
 	}
 
-	// Collect all types with availability, sorted by price (cheapest first).
+	// Build allowed set from gpuFilter (empty = allow all).
+	allowed := make(map[string]bool, len(gpuFilter))
+	for _, g := range gpuFilter {
+		if _, ok := types[g]; !ok {
+			return "", "", fmt.Errorf("unknown GPU type: %s", g)
+		}
+		allowed[g] = true
+	}
+
+	// Collect matching types with availability, sorted by price (cheapest first).
 	type candidate struct {
 		name   string
 		entry  api.InstanceTypeEntry
@@ -143,6 +168,9 @@ func findAvailable(types map[string]api.InstanceTypeEntry, gpu, region string) (
 	}
 	var candidates []candidate
 	for name, entry := range types {
+		if len(allowed) > 0 && !allowed[name] {
+			continue
+		}
 		if target := matchRegion(entry, region); target != "" {
 			candidates = append(candidates, candidate{name, entry, target})
 		}
